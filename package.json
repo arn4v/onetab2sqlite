@@ -19,9 +19,11 @@
   "dependencies": {
     "@vercel/ncc": "^0.27.0",
     "arg": "^5.0.0",
-    "sqlite3": "^5.0.1"
+    "better-sqlite3": "^7.1.2"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "prettier": "^2.2.1"
+  },
   "repository": {
     "type": "git",
     "url": "git://github.com/arn4v/onetab2sqlite.git"

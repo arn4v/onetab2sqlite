@@ -2,7 +2,6 @@
 const path = require("path");
 const fs = require("fs");
 const arg = require("arg");
-const { Database } = require("sqlite3");
 
 const args = arg({
   "--file": [String],
@@ -36,104 +35,54 @@ if (!dbExists)
     `Database doesn't exist at ${dbPath}, creating new sqlite3 database.`
   );
 
-const createLinksTable = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
-const createTempTable = `CREATE TABLE temp(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
-const insertQuery = `INSERT INTO temp (title, url) VALUES (?, ?)`;
-const copyTemp = `INSERT INTO links SELECT DISTINCT * FROM temp`;
-const dropTemp = `DROP TABLE temp`;
+const createTable = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
+const insertQuery = `INSERT INTO links (title, url) VALUES (?, ?)`;
 
-(async () => {
-  const db = new Database(dbPath);
+const db = require("better-sqlite3")(dbPath);
+const tables = db
+  .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+  .all();
+if (tables.length === 0) db.exec(createTable);
 
-  const tables = await new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.all(
-        "select name from sqlite_master where type='table'",
-        function (err, tables) {
-          if (err) reject(err);
-          resolve(tables);
-        }
-      );
-    });
-  });
-
-  if (tables.length === 0) {
-    db.run(createLinksTable);
-  }
-
-  if (!tables.some((i) => i.name === "temp")) {
-    db.run(createTempTable);
-  }
-
-  for (const i of args["--file"]) {
-    const filePath = rj(ROOT, i);
-    const fileExists = fs.existsSync(filePath);
-    if (!fileExists) {
-      console.log(`${i} doesn't exist, skipping`);
-    } else {
-      let file = fs
-        .readFileSync(filePath, { encoding: "utf-8" })
-        .toString()
-        .split("\n");
-
-      file = file.map((i) => {
+let links = [];
+for (const i of args["--file"]) {
+  const filePath = rj(ROOT, i);
+  const fileExists = fs.existsSync(filePath);
+  if (!fileExists) {
+    console.log(`${i} doesn't exist, skipping`);
+  } else {
+    let file = fs
+      .readFileSync(filePath, { encoding: "utf-8" })
+      .toString()
+      .split("\n")
+      .map((i) => {
         return i
           .replace(/\|/, "&&&")
           .split("&&&")
           .map((i) => i.trim());
-      });
-
-      file = file.filter((i) => {
+      })
+      .filter((i) => {
         return (
           i[0] &&
           i[1] &&
           !i[0].includes("chrome-extension://") &&
           !i[0].includes("google.")
         );
+      })
+      .map((i) => {
+        if (!i[1]) i[1] = i[0];
+        return i;
       });
-
-      for (const i of file) {
-        if (i[0]) {
-          if (!i[1]) i[1] = i[0];
-          db.serialize(function () {
-            const stmt = db.prepare(insertQuery);
-            stmt.run(i[1], i[0]);
-            stmt.finalize();
-          });
-        }
-      }
-    }
+    links = [...links, ...file];
   }
-  return db;
-})()
-  .then((db) => {
-    db.serialize(() => {
-      db.run(copyTemp);
-      db.run(dropTemp);
-    });
-    return db;
-  })
-  .then((db) => {
-    new Promise((resolve, reject) => {
-      let queries = [];
-      db.each(
-        `SELECT * FROM links`,
-        (err, row) => {
-          if (err) reject(err);
-          queries.push(row);
-        },
-        (err, n) => {
-          if (err) reject(err);
-          resolve(queries);
-        }
-      );
-    }).then(
-      /** @param {Array} queries */ (queries) => {
-        console.log(queries);
-      }
-    );
-    return db;
-  })
-  .then((db) => {
-    db.close();
-  });
+}
+
+for (const i of links) {
+  const rows = db.prepare(`SELECT * FROM links WHERE url = ?`).all(i[0]);
+
+  if (Array.isArray(rows) && rows.length === 0) {
+    db.prepare(insertQuery).run(i[1], i[0]);
+  }
+}
+
+db.close();
