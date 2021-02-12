@@ -36,10 +36,14 @@ if (!dbExists)
     `Database doesn't exist at ${dbPath}, creating new sqlite3 database.`
   );
 
+const createLinksTable = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
+const createTempTable = `CREATE TABLE temp(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
+const insertQuery = `INSERT INTO temp (title, url) VALUES (?, ?)`;
+const copyTemp = `INSERT INTO links SELECT DISTINCT * FROM temp`;
+const dropTemp = `DROP TABLE temp`;
+
 (async () => {
   const db = new Database(dbPath);
-  const createTableQuery = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
-  const insertQuery = `INSERT INTO links (title, url) VALUES (?, ?)`;
 
   const tables = await new Promise((resolve, reject) => {
     db.serialize(() => {
@@ -53,72 +57,83 @@ if (!dbExists)
     });
   });
 
-  const doesExist = (url) =>
-    new Promise((resolve, reject) => {
-      db.all(
-        `SELECT title, url FROM links WHERE url=${`${
-          url.includes("'") ? '"' : "'"
-        }${url}${url.includes("'") ? '"' : "'"}`}`,
-        (err, rows) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(rows);
-          }
-        }
-      );
-    });
-
   if (tables.length === 0) {
-    db.run(createTableQuery);
+    db.run(createLinksTable);
   }
 
-  db.serialize(function () {
-    for (const i of args["--file"]) {
-      const filePath = rj(ROOT, i);
-      const fileExists = fs.existsSync(filePath);
-      if (!fileExists) {
-        console.log(`${i} doesn't exist, skipping`);
-      } else {
-        const file = fs
-          .readFileSync(filePath, { encoding: "utf-8" })
-          .toString()
-          .split("\n");
-        file
-          .map((i) => {
-            return i
-              .replace(/\|/, "&&&")
-              .split("&&&")
-              .map((i) => i.trim());
-          })
-          .filter((i) => {
-            return (
-              i[0] &&
-              i[1] &&
-              !i[0].includes("chrome-extension://") &&
-              !i[0].includes("google.")
-            );
-          })
-          .forEach((i) => {
-            if (i[0]) {
-              if (!i[1]) i[1] = i[0];
-              doesExist(i[0].trim())
-                .then((rows) => {
-                  if (Array.isArray(rows) && rows.length === 0) {
-                    const stmt = db.prepare(insertQuery);
-                    stmt.run(i[1], i[0]);
-                    stmt.finalize();
-                  }
-                })
-                .catch((err) => {
-                  console.log(err.toString());
-                });
-            }
+  if (!tables.some((i) => i.name === "temp")) {
+    db.run(createTempTable);
+  }
+
+  for (const i of args["--file"]) {
+    const filePath = rj(ROOT, i);
+    const fileExists = fs.existsSync(filePath);
+    if (!fileExists) {
+      console.log(`${i} doesn't exist, skipping`);
+    } else {
+      let file = fs
+        .readFileSync(filePath, { encoding: "utf-8" })
+        .toString()
+        .split("\n");
+
+      file = file.map((i) => {
+        return i
+          .replace(/\|/, "&&&")
+          .split("&&&")
+          .map((i) => i.trim());
+      });
+
+      file = file.filter((i) => {
+        return (
+          i[0] &&
+          i[1] &&
+          !i[0].includes("chrome-extension://") &&
+          !i[0].includes("google.")
+        );
+      });
+
+      for (const i of file) {
+        if (i[0]) {
+          if (!i[1]) i[1] = i[0];
+          db.serialize(function () {
+            const stmt = db.prepare(insertQuery);
+            stmt.run(i[1], i[0]);
+            stmt.finalize();
           });
+        }
       }
     }
-  });
+  }
   return db;
-})().then((db) => {
-  db.close();
-});
+})()
+  .then((db) => {
+    db.serialize(() => {
+      db.run(copyTemp);
+      db.run(dropTemp);
+    });
+    return db;
+  })
+  .then((db) => {
+    new Promise((resolve, reject) => {
+      let queries = [];
+      db.each(
+        `SELECT * FROM links`,
+        (err, row) => {
+          if (err) reject(err);
+          queries.push(row);
+        },
+        (err, n) => {
+          if (err) reject(err);
+          resolve(queries);
+        }
+      );
+    }).then(
+      /** @param {Array} queries */ (queries) => {
+        console.log(queries);
+      }
+    );
+    return db;
+  })
+  .then((db) => {
+    db.close();
+  });
