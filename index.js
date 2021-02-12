@@ -82,9 +82,11 @@ const insertQuery = `INSERT INTO links (title, link) VALUES (?, ?)`;
               .split("&&&")
               .map((i) => i.trim());
           })
-          .filter((i) => i[0] && i[1])
           .forEach((i) => {
-            stmt.run(i[1], i[0]);
+            if (i[0]) {
+              if (i[1]) i[1] = i[0];
+              stmt.run(i[1], i[0]);
+            }
           });
         stmt.finalize();
       });

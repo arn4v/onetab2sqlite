@@ -1,5 +1,5 @@
 {
-  "name": "onetab2sqlite",
+  "name": "@arn4v/onetab2sqlite",
   "description": "Parses OneTab exports into Sqlite3 database.",
   "version": "0.1.0",
   "author": "Arnav Gosain <arnav@arnavgosain.com>",
@@ -20,5 +20,14 @@
     "@vercel/ncc": "^0.27.0",
     "arg": "^5.0.0",
     "sqlite3": "^5.0.1"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/arn4v/onetab2sqlite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arn4v/onetab2sqlite/issues"
+  },
+  "homepage": "https://github.com/arn4v/onetab2sqlite#readme"
 }
