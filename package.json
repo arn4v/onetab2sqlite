@@ -1,0 +1,24 @@
+{
+  "name": "onetab2sqlite",
+  "description": "Parses OneTab exports into Sqlite3 database.",
+  "version": "0.1.0",
+  "author": "Arnav Gosain <arnav@arnavgosain.com>",
+  "license": "MIT",
+  "main": "index.js",
+  "bin": {
+    "o2s": "index.js",
+    "onetab2sqlite": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "build": "ncc build index.js -o dist"
+  },
+  "keywords": [
+    "onetab"
+  ],
+  "dependencies": {
+    "@vercel/ncc": "^0.27.0",
+    "arg": "^5.0.0",
+    "sqlite3": "^5.0.1"
+  }
+}
