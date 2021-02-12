@@ -36,11 +36,11 @@ if (!dbExists)
     `Database doesn't exist at ${dbPath}, creating new sqlite3 database.`
   );
 
-const db = new Database(dbPath);
-const createTableQuery = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, link TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
-const insertQuery = `INSERT INTO links (title, link) VALUES (?, ?)`;
-
 (async () => {
+  const db = new Database(dbPath);
+  const createTableQuery = `CREATE TABLE links(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
+  const insertQuery = `INSERT INTO links (title, url) VALUES (?, ?)`;
+
   const tables = await new Promise((resolve, reject) => {
     db.serialize(() => {
       db.all(
@@ -53,43 +53,72 @@ const insertQuery = `INSERT INTO links (title, link) VALUES (?, ?)`;
     });
   });
 
+  const doesExist = (url) =>
+    new Promise((resolve, reject) => {
+      db.all(
+        `SELECT title, url FROM links WHERE url=${`${
+          url.includes("'") ? '"' : "'"
+        }${url}${url.includes("'") ? '"' : "'"}`}`,
+        (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows);
+          }
+        }
+      );
+    });
+
   if (tables.length === 0) {
-    db.run(createTableQuery, (_, err) => console.log(_, err));
+    db.run(createTableQuery);
   }
 
-  args["--file"].forEach((i) => {
-    const filePath = rj(ROOT, i);
-    const fileExists = fs.existsSync(filePath);
-    if (!fileExists) {
-      console.log(`${i} doesn't exist, skipping`);
-    } else {
-      const file = fs
-        .readFileSync(filePath, { encoding: "utf-8" })
-        .toString()
-        .split("\n");
-      db.serialize(function () {
-        const stmt = db.prepare(insertQuery);
+  db.serialize(function () {
+    for (const i of args["--file"]) {
+      const filePath = rj(ROOT, i);
+      const fileExists = fs.existsSync(filePath);
+      if (!fileExists) {
+        console.log(`${i} doesn't exist, skipping`);
+      } else {
+        const file = fs
+          .readFileSync(filePath, { encoding: "utf-8" })
+          .toString()
+          .split("\n");
         file
-          .filter(
-            (i) =>
-              i.length > 0 &&
-              !i.includes("chrome-extension://") &&
-              !i.includes("google.")
-          )
           .map((i) => {
             return i
               .replace(/\|/, "&&&")
               .split("&&&")
               .map((i) => i.trim());
           })
+          .filter((i) => {
+            return (
+              i[0] &&
+              i[1] &&
+              !i[0].includes("chrome-extension://") &&
+              !i[0].includes("google.")
+            );
+          })
           .forEach((i) => {
             if (i[0]) {
-              if (i[1]) i[1] = i[0];
-              stmt.run(i[1], i[0]);
+              if (!i[1]) i[1] = i[0];
+              doesExist(i[0].trim())
+                .then((rows) => {
+                  if (Array.isArray(rows) && rows.length === 0) {
+                    const stmt = db.prepare(insertQuery);
+                    stmt.run(i[1], i[0]);
+                    stmt.finalize();
+                  }
+                })
+                .catch((err) => {
+                  console.log(err.toString());
+                });
             }
           });
-        stmt.finalize();
-      });
+      }
     }
   });
-})().finally(() => db.close());
+  return db;
+})().then((db) => {
+  db.close();
+});
