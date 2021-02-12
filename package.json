@@ -1,7 +1,7 @@
 {
   "name": "@arn4v/onetab2sqlite",
   "description": "Parses OneTab exports into Sqlite3 database.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Arnav Gosain <arnav@arnavgosain.com>",
   "license": "MIT",
   "main": "index.js",
